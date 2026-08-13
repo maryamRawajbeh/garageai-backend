@@ -1,6 +1,8 @@
 const { callDiagnoseText } = require('../services/pythonService');
 const db = require('../config/db');
 
+const AUDIO_RESULT_LABELS = new Set(['belt', 'brake', 'sway']);
+
 function isValidMessage(m) {
   return (
     m &&
@@ -8,6 +10,38 @@ function isValidMessage(m) {
     (m.role === 'user' || m.role === 'assistant') &&
     typeof m.content === 'string' &&
     m.content.trim().length > 0
+  );
+}
+
+// The audio ensemble's own classification, when the chat was opened from an analysis
+// result -- lets the diagnosis service ground on it directly instead of re-deriving the
+// category from a semantic search over prose that merely describes the result.
+function isValidAudioResult(a) {
+  return (
+    a &&
+    typeof a === 'object' &&
+    AUDIO_RESULT_LABELS.has(a.predicted_class) &&
+    typeof a.confidence === 'number' &&
+    Number.isFinite(a.confidence)
+  );
+}
+
+const SEVERITY_LEVELS = new Set(['low', 'medium', 'high']);
+
+// The client-side severity checklist's own result (severityForm.ts), when the chat was
+// opened from it -- lets the diagnosis service build on an already-computed, rule-based
+// severity instead of re-deriving (and risking contradicting) it via the LLM.
+function isValidFormResult(f) {
+  return (
+    f &&
+    typeof f === 'object' &&
+    AUDIO_RESULT_LABELS.has(f.predicted_class) &&
+    Number.isInteger(f.percent) &&
+    f.percent >= 0 &&
+    f.percent <= 100 &&
+    SEVERITY_LEVELS.has(f.level) &&
+    Array.isArray(f.positive_findings) &&
+    f.positive_findings.every((x) => typeof x === 'string')
   );
 }
 
@@ -25,6 +59,8 @@ function toConversationSummary(row) {
     predicted_class: row.predicted_class,
     category_label: row.category_label,
     match_score: row.match_score,
+    severity: row.severity,
+    severity_reason: row.severity_reason,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -38,7 +74,7 @@ function toConversationDetail(row) {
 }
 
 async function diagnoseText(req, res) {
-  const { messages, conversationId } = req.body || {};
+  const { messages, conversationId, audioResult, formResult } = req.body || {};
 
   if (!Array.isArray(messages) || messages.length === 0 || !messages.every(isValidMessage)) {
     return res.status(400).json({
@@ -54,8 +90,21 @@ async function diagnoseText(req, res) {
     return res.status(400).json({ error: 'conversationId must be an integer when provided' });
   }
 
+  if (audioResult !== undefined && audioResult !== null && !isValidAudioResult(audioResult)) {
+    return res.status(400).json({
+      error: 'audioResult must be { predicted_class: "belt"|"brake"|"sway", confidence: number }',
+    });
+  }
+
+  if (formResult !== undefined && formResult !== null && !isValidFormResult(formResult)) {
+    return res.status(400).json({
+      error:
+        'formResult must be { predicted_class: "belt"|"brake"|"sway", percent: 0-100, level: "low"|"medium"|"high", positive_findings: string[] }',
+    });
+  }
+
   try {
-    const result = await callDiagnoseText(messages);
+    const result = await callDiagnoseText(messages, audioResult, formResult);
     let savedConversationId = null;
 
     if (req.user) {
@@ -65,10 +114,19 @@ async function diagnoseText(req, res) {
         const info = db
           .prepare(
             `UPDATE diagnose_conversations
-             SET messages = ?, predicted_class = ?, category_label = ?, match_score = ?, updated_at = datetime('now')
+             SET messages = ?, predicted_class = ?, category_label = ?, match_score = ?, severity = ?, severity_reason = ?, updated_at = datetime('now')
              WHERE id = ? AND user_id = ?`
           )
-          .run(fullMessages, result.predicted_class, result.category_label, result.match_score, conversationId, req.user.id);
+          .run(
+            fullMessages,
+            result.predicted_class,
+            result.category_label,
+            result.match_score,
+            result.severity,
+            result.severity_reason,
+            conversationId,
+            req.user.id
+          );
 
         if (info.changes > 0) {
           savedConversationId = conversationId;
@@ -78,10 +136,18 @@ async function diagnoseText(req, res) {
       if (!savedConversationId) {
         const info = db
           .prepare(
-            `INSERT INTO diagnose_conversations (user_id, messages, predicted_class, category_label, match_score)
-             VALUES (?, ?, ?, ?, ?)`
+            `INSERT INTO diagnose_conversations (user_id, messages, predicted_class, category_label, match_score, severity, severity_reason)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
           )
-          .run(req.user.id, fullMessages, result.predicted_class, result.category_label, result.match_score);
+          .run(
+            req.user.id,
+            fullMessages,
+            result.predicted_class,
+            result.category_label,
+            result.match_score,
+            result.severity,
+            result.severity_reason
+          );
         savedConversationId = info.lastInsertRowid;
       }
     }

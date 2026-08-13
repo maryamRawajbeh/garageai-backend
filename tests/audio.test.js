@@ -73,4 +73,16 @@ describe('POST /api/v1/audio/analyze', () => {
 
     expect(res.status).toBe(502);
   });
+
+  it('returns 504 when the analysis service times out', async () => {
+    const timeoutError = new Error('timeout of 60000ms exceeded');
+    timeoutError.code = 'ECONNABORTED';
+    callPredict.mockRejectedValue(timeoutError);
+
+    const res = await request(app)
+      .post('/api/v1/audio/analyze')
+      .attach('file', Buffer.from('RIFF....WAVEfmt '), { filename: 'engine.wav', contentType: 'audio/wav' });
+
+    expect(res.status).toBe(504);
+  });
 });

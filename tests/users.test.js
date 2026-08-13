@@ -79,6 +79,28 @@ describe('User routes', () => {
 
       expect(res.status).toBe(401);
     });
+
+    it('revokes other sessions but keeps the one making the change alive', async () => {
+      await signupAndGetToken();
+      const session1 = (await request(app).post('/api/v1/auth/login').send(user)).body.token;
+      const session2 = (await request(app).post('/api/v1/auth/login').send(user)).body.token;
+
+      const res = await request(app)
+        .put('/api/v1/users/me/password')
+        .set('Authorization', `Bearer ${session1}`)
+        .send({ currentPassword: user.password, newPassword: 'new-secret-456' });
+      expect(res.status).toBe(200);
+
+      const currentSessionStillWorks = await request(app)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${session1}`);
+      expect(currentSessionStillWorks.status).toBe(200);
+
+      const otherSessionRevoked = await request(app)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${session2}`);
+      expect(otherSessionRevoked.status).toBe(401);
+    });
   });
 
   describe('Settings', () => {

@@ -16,6 +16,8 @@ const fakeResult = {
   match_score: 0.92,
   matched_phrases: ['في صفير من قدام وقت التشغيل'],
   answer: 'يبدو إنه القشاط مرخي أو تالف، ينصح بفحصه بالورشة.',
+  severity: 'medium',
+  severity_reason: 'صوت متكرر بس بدون أعراض إضافية لسا',
 };
 
 async function signupAndGetToken(overrides = {}) {
@@ -77,7 +79,58 @@ describe('POST /api/v1/diagnose/text', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.predicted_class).toBe('02_serpentine_belt');
-    expect(callDiagnoseText).toHaveBeenCalledWith(messages);
+    expect(callDiagnoseText).toHaveBeenCalledWith(messages, undefined, undefined);
+  });
+
+  it('forwards audioResult to the Python service when provided', async () => {
+    callDiagnoseText.mockResolvedValue(fakeResult);
+
+    const messages = [{ role: 'user', content: 'طلع معي من تحليل الصوت إنه في احتمال Belt' }];
+    const audioResult = { predicted_class: 'belt', confidence: 0.84 };
+    const res = await request(app).post('/api/v1/diagnose/text').send({ messages, audioResult });
+
+    expect(res.status).toBe(200);
+    expect(callDiagnoseText).toHaveBeenCalledWith(messages, audioResult, undefined);
+  });
+
+  it('rejects an audioResult with an unknown predicted_class', async () => {
+    const res = await request(app)
+      .post('/api/v1/diagnose/text')
+      .send({
+        messages: [{ role: 'user', content: 'صوت غريب' }],
+        audioResult: { predicted_class: 'engine', confidence: 0.9 },
+      });
+
+    expect(res.status).toBe(400);
+    expect(callDiagnoseText).not.toHaveBeenCalled();
+  });
+
+  it('forwards formResult to the Python service when provided', async () => {
+    callDiagnoseText.mockResolvedValue(fakeResult);
+
+    const messages = [{ role: 'user', content: 'شو رأيك بنتيجة الفورم؟' }];
+    const formResult = {
+      predicted_class: 'brake',
+      percent: 80,
+      level: 'high',
+      positive_findings: ['الصوت طحن معدني'],
+    };
+    const res = await request(app).post('/api/v1/diagnose/text').send({ messages, formResult });
+
+    expect(res.status).toBe(200);
+    expect(callDiagnoseText).toHaveBeenCalledWith(messages, undefined, formResult);
+  });
+
+  it('rejects a formResult with an out-of-range percent', async () => {
+    const res = await request(app)
+      .post('/api/v1/diagnose/text')
+      .send({
+        messages: [{ role: 'user', content: 'صوت غريب' }],
+        formResult: { predicted_class: 'brake', percent: 150, level: 'high', positive_findings: [] },
+      });
+
+    expect(res.status).toBe(400);
+    expect(callDiagnoseText).not.toHaveBeenCalled();
   });
 
   it('supports a multi-turn follow-up question', async () => {
@@ -91,7 +144,7 @@ describe('POST /api/v1/diagnose/text', () => {
     const res = await request(app).post('/api/v1/diagnose/text').send({ messages });
 
     expect(res.status).toBe(200);
-    expect(callDiagnoseText).toHaveBeenCalledWith(messages);
+    expect(callDiagnoseText).toHaveBeenCalledWith(messages, undefined, undefined);
   });
 
   it('returns 502 when the diagnosis service is unreachable', async () => {
@@ -102,6 +155,18 @@ describe('POST /api/v1/diagnose/text', () => {
       .send({ messages: [{ role: 'user', content: 'في صوت غريب من تحت السيارة' }] });
 
     expect(res.status).toBe(502);
+  });
+
+  it('returns 504 when the diagnosis service times out', async () => {
+    const timeoutError = new Error('timeout of 30000ms exceeded');
+    timeoutError.code = 'ECONNABORTED';
+    callDiagnoseText.mockRejectedValue(timeoutError);
+
+    const res = await request(app)
+      .post('/api/v1/diagnose/text')
+      .send({ messages: [{ role: 'user', content: 'في صوت غريب من تحت السيارة' }] });
+
+    expect(res.status).toBe(504);
   });
 
   describe('anonymous users', () => {
@@ -135,6 +200,8 @@ describe('POST /api/v1/diagnose/text', () => {
         .set('Authorization', `Bearer ${token}`);
       expect(listRes.body.conversations).toHaveLength(1);
       expect(listRes.body.conversations[0].category_label).toBe(fakeResult.category_label);
+      expect(listRes.body.conversations[0].severity).toBe(fakeResult.severity);
+      expect(listRes.body.conversations[0].severity_reason).toBe(fakeResult.severity_reason);
     });
 
     it('appends to the same conversation when conversationId is passed back', async () => {

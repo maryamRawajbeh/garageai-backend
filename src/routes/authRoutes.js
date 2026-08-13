@@ -2,7 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
-const { signup, login, me, forgotPassword, resetPassword } = require('../controllers/authController');
+const { signup, login, me, logout, forgotPassword, resetPassword } = require('../controllers/authController');
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -71,6 +71,19 @@ router.post('/login', authLimiter, login);
  *       401: { description: Not authenticated }
  */
 router.get('/me', requireAuth, me);
+
+/**
+ * @swagger
+ * /api/v1/auth/logout:
+ *   post:
+ *     summary: Revoke the current session (the bearer token becomes unusable immediately)
+ *     tags: [Auth]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       204: { description: Logged out }
+ *       401: { description: Not authenticated }
+ */
+router.post('/logout', requireAuth, logout);
 
 /**
  * @swagger

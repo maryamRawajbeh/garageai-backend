@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('../config/db');
 const { signToken } = require('../utils/jwt');
+const { createSession, revokeSession } = require('../utils/sessionStore');
 const { sendPasswordResetEmail } = require('../services/mailer');
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -38,7 +39,8 @@ async function signup(req, res) {
     .run(name.trim(), email.toLowerCase(), passwordHash);
 
   const user = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(info.lastInsertRowid);
-  const token = signToken({ sub: user.id });
+  const jti = createSession(user.id);
+  const token = signToken({ sub: user.id, jti });
 
   return res.status(201).json({ token, user: toPublicUser(user) });
 }
@@ -60,12 +62,18 @@ async function login(req, res) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
-  const token = signToken({ sub: user.id });
+  const jti = createSession(user.id);
+  const token = signToken({ sub: user.id, jti });
   return res.status(200).json({ token, user: toPublicUser(user) });
 }
 
 function me(req, res) {
   return res.status(200).json({ user: toPublicUser(req.user) });
+}
+
+function logout(req, res) {
+  if (req.sessionJti) revokeSession(req.sessionJti);
+  return res.status(204).send();
 }
 
 async function forgotPassword(req, res) {
@@ -106,7 +114,7 @@ async function forgotPassword(req, res) {
   return res.status(200).json(genericResponse);
 }
 
-function resetPassword(req, res) {
+async function resetPassword(req, res) {
   const { token, newPassword } = req.body || {};
 
   if (!token || !newPassword || newPassword.length < 6) {
@@ -126,14 +134,13 @@ function resetPassword(req, res) {
     return res.status(400).json({ error: 'This reset link is invalid or has expired' });
   }
 
-  bcrypt.hash(newPassword, 10).then((passwordHash) => {
-    const tx = db.transaction(() => {
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, resetRow.user_id);
-      db.prepare('UPDATE password_resets SET used = 1 WHERE id = ?').run(resetRow.id);
-    });
-    tx();
-    res.status(200).json({ message: 'Password has been reset successfully' });
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, resetRow.user_id);
+    db.prepare('UPDATE password_resets SET used = 1 WHERE id = ?').run(resetRow.id);
   });
+  tx();
+  return res.status(200).json({ message: 'Password has been reset successfully' });
 }
 
-module.exports = { signup, login, me, forgotPassword, resetPassword };
+module.exports = { signup, login, me, logout, forgotPassword, resetPassword };

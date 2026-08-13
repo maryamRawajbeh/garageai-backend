@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const db = require('../config/db');
+const { revokeOtherSessions } = require('../utils/sessionStore');
 
 function isValidEmail(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -46,6 +47,12 @@ async function changePassword(req, res) {
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, req.user.id);
+
+  // Changing your password is a signal that other sessions might not be trusted
+  // anymore (e.g. you suspect a leaked token) -- log them out, but keep the
+  // session making this very request alive so the user isn't kicked out of
+  // Settings right after successfully changing it.
+  revokeOtherSessions(req.user.id, req.sessionJti);
 
   return res.status(200).json({ message: 'Password updated successfully' });
 }

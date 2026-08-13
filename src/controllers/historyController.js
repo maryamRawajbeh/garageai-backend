@@ -6,6 +6,7 @@ function toPublicAnalysis(row) {
     filename: row.filename,
     final_prediction: row.final_prediction,
     final_confidence: row.final_confidence,
+    all_probabilities: row.all_probabilities ? JSON.parse(row.all_probabilities) : {},
     individual_models: JSON.parse(row.individual_models),
     processing_time_ms: row.processing_time_ms,
     created_at: row.created_at,

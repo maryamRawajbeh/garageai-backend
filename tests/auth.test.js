@@ -141,4 +141,47 @@ describe('Auth routes', () => {
       expect(res.status).toBe(400);
     });
   });
+
+  describe('POST /api/v1/auth/logout', () => {
+    beforeEach(async () => {
+      await request(app).post('/api/v1/auth/signup').send(validUser);
+    });
+
+    it('rejects without a token', async () => {
+      const res = await request(app).post('/api/v1/auth/logout');
+      expect(res.status).toBe(401);
+    });
+
+    it('revokes the current token so it can no longer be used', async () => {
+      const loginRes = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: validUser.email, password: validUser.password });
+      const token = loginRes.body.token;
+
+      const beforeLogout = await request(app).get('/api/v1/auth/me').set('Authorization', `Bearer ${token}`);
+      expect(beforeLogout.status).toBe(200);
+
+      const logoutRes = await request(app).post('/api/v1/auth/logout').set('Authorization', `Bearer ${token}`);
+      expect(logoutRes.status).toBe(204);
+
+      const afterLogout = await request(app).get('/api/v1/auth/me').set('Authorization', `Bearer ${token}`);
+      expect(afterLogout.status).toBe(401);
+    });
+
+    it("does not invalidate a different session's token", async () => {
+      const login1 = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: validUser.email, password: validUser.password });
+      const login2 = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: validUser.email, password: validUser.password });
+
+      await request(app).post('/api/v1/auth/logout').set('Authorization', `Bearer ${login1.body.token}`);
+
+      const stillValid = await request(app)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${login2.body.token}`);
+      expect(stillValid.status).toBe(200);
+    });
+  });
 });

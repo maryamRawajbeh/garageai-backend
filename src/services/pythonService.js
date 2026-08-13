@@ -28,10 +28,10 @@ async function callPredict(filePath, originalName) {
   return response.data;
 }
 
-async function callDiagnoseText(messages) {
+async function callDiagnoseText(messages, audioResult, formResult) {
   const response = await axios.post(
     `${PYTHON_URL}/diagnose/text`,
-    { messages },
+    { messages, audio_result: audioResult ?? undefined, form_result: formResult ?? undefined },
     { headers: internalHeaders(), timeout: DIAGNOSE_TIMEOUT_MS }
   );
   return response.data;

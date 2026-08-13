@@ -14,13 +14,14 @@ async function analyzeAudio(req, res) {
 
     if (req.user) {
       db.prepare(
-        `INSERT INTO analyses (user_id, filename, final_prediction, final_confidence, individual_models, processing_time_ms)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT INTO analyses (user_id, filename, final_prediction, final_confidence, all_probabilities, individual_models, processing_time_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       ).run(
         req.user.id,
         req.file.originalname,
         result.final_prediction,
         result.final_confidence,
+        JSON.stringify(result.all_probabilities || {}),
         JSON.stringify(result.individual_models || []),
         result.processing_time_ms || null
       );

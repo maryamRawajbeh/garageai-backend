@@ -45,6 +45,22 @@ const diagnoseLimiter = rateLimit({
  *               conversationId:
  *                 type: integer
  *                 description: Pass back the conversationId from a previous reply to keep saving to the same conversation (logged-in users only).
+ *               audioResult:
+ *                 type: object
+ *                 description: The audio ensemble's own classification, when the chat was opened from an analysis result -- lets the diagnosis ground on it directly instead of re-deriving the category from a semantic search over prose that merely describes the result.
+ *                 properties:
+ *                   predicted_class: { type: string, enum: [belt, brake, sway] }
+ *                   confidence: { type: number }
+ *               formResult:
+ *                 type: object
+ *                 description: The client-side severity checklist's own result, when the chat was opened from it -- lets the diagnosis build on an already-computed, rule-based severity instead of re-deriving it via the LLM.
+ *                 properties:
+ *                   predicted_class: { type: string, enum: [belt, brake, sway] }
+ *                   percent: { type: integer, minimum: 0, maximum: 100 }
+ *                   level: { type: string, enum: [low, medium, high] }
+ *                   positive_findings:
+ *                     type: array
+ *                     items: { type: string }
  *     responses:
  *       200:
  *         description: Diagnosis / conversational reply grounded in the fault knowledge base
@@ -60,6 +76,8 @@ const diagnoseLimiter = rateLimit({
  *                   type: array
  *                   items: { type: string }
  *                 answer: { type: string }
+ *                 severity: { type: string, nullable: true, enum: [low, medium, high] }
+ *                 severity_reason: { type: string, nullable: true }
  *                 conversationId: { type: integer, nullable: true }
  *       400:
  *         description: Invalid or missing messages
