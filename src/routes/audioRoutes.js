@@ -32,6 +32,10 @@ const analyzeLimiter = rateLimit({
  *               file:
  *                 type: string
  *                 format: binary
+ *               extra_model:
+ *                 type: string
+ *                 enum: [ast, clap]
+ *                 description: Optional -- request an extra comparison model's prediction (loaded on-demand by the Python service, adds ~10-30s). Omit for the normal fast response.
  *     responses:
  *       200:
  *         description: Analysis result

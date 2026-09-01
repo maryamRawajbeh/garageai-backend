@@ -15,6 +15,21 @@ const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Off (Express's default) unless TRUST_PROXY is set. Only set this when actually
+// deployed behind a known, trusted reverse proxy (nginx, Render, Railway, ...) -- with
+// it off, req.ip is always the direct TCP peer, so every rate limiter below keys
+// correctly per real client. Deployed behind a proxy WITHOUT setting this, req.ip is
+// the proxy's own address for every request, collapsing authLimiter/analyzeLimiter/
+// diagnoseLimiter into one shared bucket for the entire user base -- a single client
+// can then exhaust everyone else's quota. Conversely, setting it to a hop count
+// without an actual trusted proxy in front lets a client spoof X-Forwarded-For to fake
+// a different IP per request and bypass rate limiting entirely -- so this must match
+// the real deployment topology, never be turned on "just in case".
+if (process.env.TRUST_PROXY) {
+  const hops = Number(process.env.TRUST_PROXY);
+  app.set('trust proxy', Number.isNaN(hops) ? process.env.TRUST_PROXY : hops);
+}
+
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000' }));
 app.use(express.json());

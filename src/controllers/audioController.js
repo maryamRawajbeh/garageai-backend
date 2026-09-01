@@ -8,9 +8,13 @@ async function analyzeAudio(req, res) {
   }
 
   const filePath = req.file.path;
+  // Multer's upload.single('file') still parses other multipart text fields into
+  // req.body -- extra_model is optional and undefined if the client didn't send it,
+  // in which case callPredict falls back to its normal (shorter) timeout.
+  const extraModel = req.body.extra_model || undefined;
 
   try {
-    const result = await callPredict(filePath, req.file.originalname);
+    const result = await callPredict(filePath, req.file.originalname, extraModel);
 
     if (req.user) {
       db.prepare(
