@@ -6,7 +6,7 @@ const options = {
     info: {
       title: 'GarageAI API Gateway',
       version: '1.0.0',
-      description: 'GarageAI — main API gateway for analyzing car fault sounds (Ensemble: Traditional ML + CNN + YAMNet)',
+      description: 'GarageAI — main API gateway for analyzing car fault sounds (primary model: Traditional ML/XGBoost; CNN, YAMNet and others shown for comparison only)',
     },
     servers: [{ url: 'http://localhost:5000', description: 'Development server' }],
     components: {
